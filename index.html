@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>木製防火雨戸ビューアー</title>
+    <style>
+        /* 画面レイアウトのスタイル */
+        body { margin: 0; display: flex; height: 100vh; overflow: hidden; font-family: sans-serif; background-color: #222; }
+        #canvas-container { flex: 1; position: relative; }
+        #ui-panel { width: 300px; background-color: #f8f9fa; padding: 15px; overflow-y: auto; border-left: 1px solid #ccc; box-sizing: border-box; }
+        
+        /* ツリー構造のスタイル */
+        details { margin-bottom: 5px; }
+        summary { cursor: pointer; font-weight: bold; margin-bottom: 5px; list-style: none; display: flex; align-items: center; user-select: none; }
+        summary::before { content: '▶'; display: inline-block; width: 1.5em; font-size: 0.8em; transition: transform 0.2s; color: #555; }
+        details[open] > summary::before { transform: rotate(90deg); }
+        
+        .children { margin-left: 24px; }
+        label { display: flex; align-items: center; margin: 4px 0; cursor: pointer; font-weight: normal; font-size: 0.9em; user-select: none; }
+        input[type="checkbox"] { margin-right: 8px; cursor: pointer; }
+        .master-summary { font-size: 1.1em; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; }
+
+        /* ツールチップのスタイル */
+        #tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            white-space: pre-line;
+        }
+        #tooltip .memo-text {
+            color: #ccc;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        /* 画面上の操作説明 */
+        #instruction {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        /* -------------------------------------
+           追加：視点インジケーター（屋外/屋内）
+        ------------------------------------- */
+        #view-side-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%); /* 中央揃え */
+            background-color: rgba(0, 102, 204, 0.85); /* 視認性の良い青色 */
+            color: #fff;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            transition: background-color 0.3s;
+        }
+        /* 屋内側の時は色を変える（お好みで） */
+        #view-side-indicator.indoor {
+            background-color: rgba(204, 85, 0, 0.85); /* オレンジ系 */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <div id="instruction">💡 カーソルを合わせて右クリックでオブジェクトを非表示にできます</div>
+        <div id="view-side-indicator">👀 視点：屋外側</div>
+        <div id="tooltip"></div>
+    </div>
+
+    <div id="ui-panel">
+        <h3>オブジェクトの表示設定</h3>
+        
+        <details open>
+            <summary class="master-summary"><label><input type="checkbox" class="parent-cb" data-target="all_objects" checked> すべてのオブジェクト</label></summary>
+            
+            <div class="children" id="all_objects">
+                <details open>
+                    <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1" checked> 建具1</label></summary>
+                    <div class="children" id="tategu1">
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_kagami" checked> 建具1_カガミ板</label></summary>
+                            <div class="children" id="tategu1_kagami">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板1" checked> 建具1_カガミ板1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板2" checked> 建具1_カガミ板2</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板3" checked> 建具1_カガミ板3</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板4" checked> 建具1_カガミ板4</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_tatekamachi" checked> 建具1_タテ框</label></summary>
+                            <div class="children" id="tategu1_tatekamachi">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框1" checked> 建具1_タテ框1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框2" checked> 建具1_タテ框2</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yatoizane" checked> 建具1_ヤトイ実</label></summary>
+                            <div class="children" id="tategu1_yatoizane">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実タテ" checked> 建具1_ヤトイ実タテ</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実ヨコ" checked> 建具1_ヤトイ実ヨコ</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokokamachi" checked> 建具1_ヨコ框</label></summary>
+                            <div class="children" id="tategu1_yokokamachi">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框1" checked> 建具1_ヨコ框1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框2" checked> 建具1_ヨコ框2</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_oshibata" checked> 建具1_押板</label></summary>
+                            <div class="children" id="tategu1_oshibata">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_押板タテ" checked> 建具1_押板タテ</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_押板ヨコ" checked> 建具1_押板ヨコ</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokozan" checked> 建具1_ヨコ桟</label></summary>
+                            <div class="children" id="tategu1_yokozan">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ桟" checked> 建具1_ヨコ桟</label>
+                            </div>
+                        </details>
+                    </div>
+                </details>
+
+                <details open>
+                    <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2" checked> 建具2</label></summary>
+                    <div class="children" id="tategu2">
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_kagami" checked> 建具2_カガミ板</label></summary>
+                            <div class="children" id="tategu2_kagami">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板1" checked> 建具2_カガミ板1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板2" checked> 建具2_カガミ板2</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板3" checked> 建具2_カガミ板3</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板4" checked> 建具2_カガミ板4</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_tatekamachi" checked> 建具2_タテ框</label></summary>
+                            <div class="children" id="tategu2_tatekamachi">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框1" checked> 建具2_タテ框1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框2" checked> 建具2_タテ框2</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yatoizane" checked> 建具2_ヤトイ実</label></summary>
+                            <div class="children" id="tategu2_yatoizane">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実タテ" checked> 建具2_ヤトイ実タテ</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実ヨコ" checked> 建具2_ヤトイ実ヨコ</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokokamachi" checked> 建具2_ヨコ框</label></summary>
+                            <div class="children" id="tategu2_yokokamachi">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框1" checked> 建具2_ヨコ框1</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框2" checked> 建具2_ヨコ框2</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_oshibata" checked> 建具2_押板</label></summary>
+                            <div class="children" id="tategu2_oshibata">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_押板タテ" checked> 建具2_押板タテ</label>
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_押板ヨコ" checked> 建具2_押板ヨコ</label>
+                            </div>
+                        </details>
+                        <details>
+                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokozan" checked> 建具2_ヨコ桟</label></summary>
+                            <div class="children" id="tategu2_yokozan">
+                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ桟" checked> 建具2_ヨコ桟</label>
+                            </div>
+                        </details>
+                    </div>
+                </details>
+
+                <details>
+                    <summary><label><input type="checkbox" class="parent-cb" data-target="tateguwaku" checked> 建具枠</label></summary>
+                    <div class="children" id="tateguwaku">
+                        <label><input type="checkbox" class="leaf-cb" data-name="7_上枠" checked> 7_上枠</label>
+                        <label><input type="checkbox" class="leaf-cb" data-name="8_下枠" checked> 8_下枠</label>
+                        <label><input type="checkbox" class="leaf-cb" data-name="9_1柱" checked> 9_1柱</label>
+                        <label><input type="checkbox" class="leaf-cb" data-name="9_2縦枠" checked> 9_2縦枠</label>
+                    </div>
+                </details>
+            </div>
+        </details>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const objectMemos = {
+            "建具1_カガミ板1": "左上のカガミ板です。\n素材：杉材",
+            "建具1_タテ框1": "左側のタテ框。\n寸法: 1800x45x45",
+            "7_上枠": "建具全体の上枠フレームです。",
+            "建具2_カガミ板2": "建具2の右上のカガミ板です。"
+        };
+
+        let scene, camera, renderer, controls, loadedModel;
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        initThreeJS();
+        setupUI();
+
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+        // -----------------------------------------------------
+        // 【追加】カメラ位置から「屋外/屋内」を判定する関数
+        // -----------------------------------------------------
+        function updateSideIndicator() {
+            if (!controls) return;
+            const indicator = document.getElementById('view-side-indicator');
+            
+            // 注視点（controls.target）を基準にしたカメラの相対X座標を計算
+            const relativeX = camera.position.x - controls.target.x;
+            
+            // Xがマイナスなら屋外側、プラスなら屋内側と判定
+            if (relativeX < 0) {
+                indicator.innerHTML = "👀 視点：<b>屋外側</b>";
+                indicator.classList.remove('indoor'); // オレンジ色を外す
+            } else {
+                indicator.innerHTML = "👀 視点：<b>屋内側</b>";
+                indicator.classList.add('indoor'); // オレンジ色をつける
+            }
+        }
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            const tooltip = document.getElementById('tooltip');
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(-4, 1.5, 0); 
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            
+            // カメラの動きがあった時に、描画とインジケーターの更新を行う
+            controls.addEventListener('change', () => {
+                updateSideIndicator();
+                render();
+            });
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+
+            const loader = new GLTFLoader();
+            loader.load('asset/wood_door.glb', (gltf) => {
+                loadedModel = gltf.scene;
+                
+                const box = new THREE.Box3().setFromObject(loadedModel);
+                const center = box.getCenter(new THREE.Vector3());
+                loadedModel.position.x += (loadedModel.position.x - center.x);
+                loadedModel.position.y += (loadedModel.position.y - center.y);
+                loadedModel.position.z += (loadedModel.position.z - center.z);
+
+                const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+                loadedModel.traverse((child) => {
+                    if (child.isMesh) {
+                        if (child.material) {
+                            child.material.side = THREE.DoubleSide;
+                        }
+                        const edgesGeometry = new THREE.EdgesGeometry(child.geometry);
+                        const lineSegments = new THREE.LineSegments(edgesGeometry, edgeMaterial);
+                        child.add(lineSegments);
+                    }
+                });
+
+                scene.add(loadedModel);
+                
+                // 初回読み込み完了時の処理
+                update3DVisibility(); 
+                updateSideIndicator(); // インジケーターの初期表示をセット
+            });
+
+            container.addEventListener('mousemove', (event) => {
+                const rect = container.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                tooltip.style.left = (event.clientX + 15) + 'px';
+                tooltip.style.top = (event.clientY + 15) + 'px';
+
+                if (loadedModel) {
+                    raycaster.setFromCamera(mouse, camera);
+                    const intersects = raycaster.intersectObject(loadedModel, true);
+                    const validIntersect = intersects.find(intersect => 
+                        intersect.object.isMesh && 
+                        !intersect.object.isLineSegments && 
+                        intersect.object.visible
+                    );
+
+                    if (validIntersect) {
+                        const objName = validIntersect.object.name;
+                        const memo = objectMemos[objName] || "（メモ未登録）";
+                        tooltip.innerHTML = `<strong>${objName}</strong><div class="memo-text">${memo}</div>`;
+                        tooltip.style.display = 'block';
+                    } else {
+                        tooltip.style.display = 'none';
+                    }
+                }
+            });
+
+            container.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none'; 
+            });
+
+            container.addEventListener('contextmenu', (event) => {
+                event.preventDefault(); 
+
+                if (loadedModel) {
+                    raycaster.setFromCamera(mouse, camera);
+                    
+                    const intersects = raycaster.intersectObject(loadedModel, true);
+                    const validIntersect = intersects.find(intersect => 
+                        intersect.object.isMesh && 
+                        !intersect.object.isLineSegments && 
+                        intersect.object.visible
+                    );
+
+                    if (validIntersect) {
+                        const objName = validIntersect.object.name;
+                        const targetCheckbox = document.querySelector(`.leaf-cb[data-name="${objName}"]`);
+                        
+                        if (targetCheckbox && targetCheckbox.checked) {
+                            targetCheckbox.checked = false;
+                            updateParentIndeterminateStates();
+                            update3DVisibility(); 
+                            tooltip.style.display = 'none';
+                        }
+                    }
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                render(); 
+            });
+        }
+
+        function setupUI() {
+            const parentCbs = document.querySelectorAll('.parent-cb');
+            const leafCbs = document.querySelectorAll('.leaf-cb');
+
+            parentCbs.forEach(parentCb => {
+                parentCb.addEventListener('change', (e) => {
+                    const isChecked = e.target.checked;
+                    const targetId = e.target.getAttribute('data-target');
+                    const childrenContainer = document.getElementById(targetId);
+                    
+                    if (childrenContainer) {
+                        const childCbs = childrenContainer.querySelectorAll('input[type="checkbox"]');
+                        childCbs.forEach(cb => {
+                            cb.checked = isChecked;
+                            cb.indeterminate = false;
+                        });
+                    }
+                    updateParentIndeterminateStates();
+                    update3DVisibility();
+                });
+            });
+
+            leafCbs.forEach(leafCb => {
+                leafCb.addEventListener('change', () => {
+                    updateParentIndeterminateStates();
+                    update3DVisibility();
+                });
+            });
+        }
+
+        function updateParentIndeterminateStates() {
+            const parents = Array.from(document.querySelectorAll('.parent-cb')).reverse();
+            parents.forEach(parent => {
+                const targetId = parent.getAttribute('data-target');
+                const childrenContainer = document.getElementById(targetId);
+                if (childrenContainer) {
+                    const leaves = Array.from(childrenContainer.querySelectorAll('.leaf-cb'));
+                    const checkedCount = leaves.filter(leaf => leaf.checked).length;
+                    if (checkedCount === 0) {
+                        parent.checked = false;
+                        parent.indeterminate = false;
+                    } else if (checkedCount === leaves.length) {
+                        parent.checked = true;
+                        parent.indeterminate = false;
+                    } else {
+                        parent.checked = false;
+                        parent.indeterminate = true;
+                    }
+                }
+            });
+        }
+
+        function update3DVisibility() {
+            if (!loadedModel) return;
+            const leafStates = {};
+            document.querySelectorAll('.leaf-cb').forEach(cb => {
+                const name = cb.getAttribute('data-name');
+                if (name) leafStates[name] = cb.checked;
+            });
+            loadedModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (leafStates[child.name] !== undefined) {
+                        child.visible = leafStates[child.name];
+                    }
+                }
+            });
+            
+            render(); 
+        }
+    </script>
+</body>
+</html>
