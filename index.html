@@ -5,13 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>木製防火雨戸ビューアー</title>
     <style>
-        /* 画面レイアウトのスタイル */
-        body { margin: 0; display: flex; height: 100vh; overflow: hidden; font-family: sans-serif; background-color: #222; }
-        #canvas-container { flex: 1; position: relative; }
-        #ui-panel { width: 300px; background-color: #f8f9fa; padding: 15px; overflow-y: auto; border-left: 1px solid #ccc; box-sizing: border-box; }
+        /* 画面レイアウト：キャンバスを絶対配置で100%に */
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #222; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+        
+        /* -------------------------------------
+           パネルを「浮かせる（オーバーレイ）」設定
+        ------------------------------------- */
+        #ui-panel { 
+            position: absolute; 
+            top: 0; 
+            right: 0; 
+            width: 300px; 
+            height: 100vh; 
+            background-color: rgba(248, 249, 250, 0.92); /* 少し透過させて浮遊感を出す */
+            padding: 15px; 
+            overflow-y: auto; 
+            box-sizing: border-box; 
+            z-index: 200;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.4);
+            transition: transform 0.3s ease; 
+        }
+        /* 閉じた状態のクラス */
+        #ui-panel.closed {
+            transform: translateX(100%);
+        }
+
+        /* 開閉用のトグルボタン */
+        #ui-toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            z-index: 100; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            transition: opacity 0.3s, background-color 0.3s;
+            opacity: 0; /* 初期はパネルが開いているので隠す */
+            pointer-events: none;
+        }
+        #ui-toggle-btn:hover { background-color: rgba(0, 0, 0, 0.9); }
+        
+        #ui-close-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            float: right;
+            padding: 0;
+            color: #555;
+        }
         
         /* ツリー構造のスタイル */
-        details { margin-bottom: 5px; }
+        details { margin-bottom: 5px; clear: both; }
         summary { cursor: pointer; font-weight: bold; margin-bottom: 5px; list-style: none; display: flex; align-items: center; user-select: none; }
         summary::before { content: '▶'; display: inline-block; width: 1.5em; font-size: 0.8em; transition: transform 0.2s; color: #555; }
         details[open] > summary::before { transform: rotate(90deg); }
@@ -19,65 +70,63 @@
         .children { margin-left: 24px; }
         label { display: flex; align-items: center; margin: 4px 0; cursor: pointer; font-weight: normal; font-size: 0.9em; user-select: none; }
         input[type="checkbox"] { margin-right: 8px; cursor: pointer; }
-        .master-summary { font-size: 1.1em; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; }
+        .master-summary { font-size: 1.1em; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; margin-top: 10px; }
 
-        /* ツールチップのスタイル */
-        #tooltip {
-            position: absolute;
-            background-color: rgba(0, 0, 0, 0.85);
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            pointer-events: none;
-            display: none;
-            z-index: 1000;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            white-space: pre-line;
-        }
-        #tooltip .memo-text {
-            color: #ccc;
-            font-size: 12px;
-            margin-top: 4px;
-        }
+        /* ツールチップ・操作説明・視点インジケーター */
+        #tooltip { position: absolute; background-color: rgba(0, 0, 0, 0.85); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 14px; pointer-events: none; display: none; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: pre-line; }
+        #tooltip .memo-text { color: #ccc; font-size: 12px; margin-top: 4px; }
+        #instruction { position: absolute; top: 20px; left: 20px; background-color: rgba(0, 0, 0, 0.7); color: #fff; padding: 10px 15px; border-radius: 6px; font-size: 14px; pointer-events: none; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.5); transition: opacity 0.3s; }
+        #view-side-indicator { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(0, 102, 204, 0.85); color: #fff; padding: 8px 20px; border-radius: 20px; font-size: 16px; font-weight: bold; pointer-events: none; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: background-color 0.3s; }
+        #view-side-indicator.indoor { background-color: rgba(204, 85, 0, 0.85); }
 
-        /* 画面上の操作説明 */
-        #instruction {
+        /* スライダーコンテナ */
+        #cut-slider-container {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 10px 15px;
-            border-radius: 6px;
-            font-size: 14px;
-            pointer-events: none;
-            z-index: 100;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        }
-
-        /* -------------------------------------
-           追加：視点インジケーター（屋外/屋内）
-        ------------------------------------- */
-        #view-side-indicator {
-            position: absolute;
-            top: 20px;
+            bottom: 25px;
             left: 50%;
-            transform: translateX(-50%); /* 中央揃え */
-            background-color: rgba(0, 102, 204, 0.85); /* 視認性の良い青色 */
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
             color: #fff;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 16px;
-            font-weight: bold;
-            pointer-events: none;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
             z-index: 100;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-            transition: background-color 0.3s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            transition: opacity 0.3s;
+            width: 85%; 
+            max-width: 400px;
+            box-sizing: border-box;
         }
-        /* 屋内側の時は色を変える（お好みで） */
-        #view-side-indicator.indoor {
-            background-color: rgba(204, 85, 0, 0.85); /* オレンジ系 */
+        .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .slider-row label { font-size: 13px; white-space: nowrap; margin: 0; flex: 0 0 auto; }
+        .slider-row input[type="range"] { flex: 1 1 auto; width: 100%; cursor: pointer; }
+
+        #assembly-slider-container {
+            position: absolute;
+            bottom: 120px; 
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 150, 136, 0.9); 
+            color: #fff;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            z-index: 100;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            width: 85%; 
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+        #assembly-slider-container label { font-size: 14px; white-space: nowrap; margin: 0; flex: 0 0 auto; }
+        #assembly-slider-container input[type="range"] { flex: 1 1 auto; width: 100%; cursor: pointer; }
+
+        /* スマホ向け：右クリック説明を消す */
+        @media (max-width: 768px) {
+            #instruction { display: none; }
         }
     </style>
 </head>
@@ -87,11 +136,29 @@
         <div id="instruction">💡 カーソルを合わせて右クリックでオブジェクトを非表示にできます</div>
         <div id="view-side-indicator">👀 視点：屋外側</div>
         <div id="tooltip"></div>
+        
+        <button id="ui-toggle-btn">⚙️ 表示設定</button>
+        
+        <div id="assembly-slider-container">
+            <label for="assembly-slider"><b>🛠️ 建具組み立て:</b></label>
+            <input type="range" id="assembly-slider" min="0" max="1" step="0.001" value="1">
+        </div>
+
+        <div id="cut-slider-container">
+            <div class="slider-row">
+                <label for="z-slider"><b>XY平面 (奥行) カット:</b></label>
+                <input type="range" id="z-slider" step="0.001">
+            </div>
+            <div class="slider-row">
+                <label for="y-slider"><b>XZ平面 (上下) カット:</b></label>
+                <input type="range" id="y-slider" step="0.001">
+            </div>
+        </div>
     </div>
 
     <div id="ui-panel">
-        <h3>オブジェクトの表示設定</h3>
-        
+        <button id="ui-close-btn" aria-label="閉じる">✖</button>
+        <h3 style="margin-top: 0;">オブジェクトの表示設定</h3>
         <details open>
             <summary class="master-summary"><label><input type="checkbox" class="parent-cb" data-target="all_objects" checked> すべてのオブジェクト</label></summary>
             
@@ -99,101 +166,25 @@
                 <details open>
                     <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1" checked> 建具1</label></summary>
                     <div class="children" id="tategu1">
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_kagami" checked> 建具1_カガミ板</label></summary>
-                            <div class="children" id="tategu1_kagami">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板1" checked> 建具1_カガミ板1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板2" checked> 建具1_カガミ板2</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板3" checked> 建具1_カガミ板3</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板4" checked> 建具1_カガミ板4</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_tatekamachi" checked> 建具1_タテ框</label></summary>
-                            <div class="children" id="tategu1_tatekamachi">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框1" checked> 建具1_タテ框1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框2" checked> 建具1_タテ框2</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yatoizane" checked> 建具1_ヤトイ実</label></summary>
-                            <div class="children" id="tategu1_yatoizane">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実タテ" checked> 建具1_ヤトイ実タテ</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実ヨコ" checked> 建具1_ヤトイ実ヨコ</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokokamachi" checked> 建具1_ヨコ框</label></summary>
-                            <div class="children" id="tategu1_yokokamachi">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框1" checked> 建具1_ヨコ框1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框2" checked> 建具1_ヨコ框2</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_oshibata" checked> 建具1_押板</label></summary>
-                            <div class="children" id="tategu1_oshibata">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_押板タテ" checked> 建具1_押板タテ</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_押板ヨコ" checked> 建具1_押板ヨコ</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokozan" checked> 建具1_ヨコ桟</label></summary>
-                            <div class="children" id="tategu1_yokozan">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ桟" checked> 建具1_ヨコ桟</label>
-                            </div>
-                        </details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_kagami" checked> 建具1_カガミ板</label></summary><div class="children" id="tategu1_kagami"><label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板1" checked> 建具1_カガミ板1</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板2" checked> 建具1_カガミ板2</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板3" checked> 建具1_カガミ板3</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_カガミ板4" checked> 建具1_カガミ板4</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_tatekamachi" checked> 建具1_タテ框</label></summary><div class="children" id="tategu1_tatekamachi"><label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框1" checked> 建具1_タテ框1</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_タテ框2" checked> 建具1_タテ框2</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yatoizane" checked> 建具1_ヤトイ実</label></summary><div class="children" id="tategu1_yatoizane"><label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実タテ" checked> 建具1_ヤトイ実タテ</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_ヤトイ実ヨコ" checked> 建具1_ヤトイ実ヨコ</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokokamachi" checked> 建具1_ヨコ框</label></summary><div class="children" id="tategu1_yokokamachi"><label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框1" checked> 建具1_ヨコ框1</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ框2" checked> 建具1_ヨコ框2</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_oshibata" checked> 建具1_押板</label></summary><div class="children" id="tategu1_oshibata"><label><input type="checkbox" class="leaf-cb" data-name="建具1_押板タテ" checked> 建具1_押板タテ</label><label><input type="checkbox" class="leaf-cb" data-name="建具1_押板ヨコ" checked> 建具1_押板ヨコ</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu1_yokozan" checked> 建具1_ヨコ桟</label></summary><div class="children" id="tategu1_yokozan"><label><input type="checkbox" class="leaf-cb" data-name="建具1_ヨコ桟" checked> 建具1_ヨコ桟</label></div></details>
                     </div>
                 </details>
-
                 <details open>
                     <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2" checked> 建具2</label></summary>
                     <div class="children" id="tategu2">
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_kagami" checked> 建具2_カガミ板</label></summary>
-                            <div class="children" id="tategu2_kagami">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板1" checked> 建具2_カガミ板1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板2" checked> 建具2_カガミ板2</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板3" checked> 建具2_カガミ板3</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板4" checked> 建具2_カガミ板4</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_tatekamachi" checked> 建具2_タテ框</label></summary>
-                            <div class="children" id="tategu2_tatekamachi">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框1" checked> 建具2_タテ框1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框2" checked> 建具2_タテ框2</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yatoizane" checked> 建具2_ヤトイ実</label></summary>
-                            <div class="children" id="tategu2_yatoizane">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実タテ" checked> 建具2_ヤトイ実タテ</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実ヨコ" checked> 建具2_ヤトイ実ヨコ</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokokamachi" checked> 建具2_ヨコ框</label></summary>
-                            <div class="children" id="tategu2_yokokamachi">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框1" checked> 建具2_ヨコ框1</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框2" checked> 建具2_ヨコ框2</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_oshibata" checked> 建具2_押板</label></summary>
-                            <div class="children" id="tategu2_oshibata">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_押板タテ" checked> 建具2_押板タテ</label>
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_押板ヨコ" checked> 建具2_押板ヨコ</label>
-                            </div>
-                        </details>
-                        <details>
-                            <summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokozan" checked> 建具2_ヨコ桟</label></summary>
-                            <div class="children" id="tategu2_yokozan">
-                                <label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ桟" checked> 建具2_ヨコ桟</label>
-                            </div>
-                        </details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_kagami" checked> 建具2_カガミ板</label></summary><div class="children" id="tategu2_kagami"><label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板1" checked> 建具2_カガミ板1</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板2" checked> 建具2_カガミ板2</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板3" checked> 建具2_カガミ板3</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_カガミ板4" checked> 建具2_カガミ板4</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_tatekamachi" checked> 建具2_タテ框</label></summary><div class="children" id="tategu2_tatekamachi"><label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框1" checked> 建具2_タテ框1</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_タテ框2" checked> 建具2_タテ框2</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yatoizane" checked> 建具2_ヤトイ実</label></summary><div class="children" id="tategu2_yatoizane"><label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実タテ" checked> 建具2_ヤトイ実タテ</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_ヤトイ実ヨコ" checked> 建具2_ヤトイ実ヨコ</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokokamachi" checked> 建具2_ヨコ框</label></summary><div class="children" id="tategu2_yokokamachi"><label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框1" checked> 建具2_ヨコ框1</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ框2" checked> 建具2_ヨコ框2</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_oshibata" checked> 建具2_押板</label></summary><div class="children" id="tategu2_oshibata"><label><input type="checkbox" class="leaf-cb" data-name="建具2_押板タテ" checked> 建具2_押板タテ</label><label><input type="checkbox" class="leaf-cb" data-name="建具2_押板ヨコ" checked> 建具2_押板ヨコ</label></div></details>
+                        <details><summary><label><input type="checkbox" class="parent-cb" data-target="tategu2_yokozan" checked> 建具2_ヨコ桟</label></summary><div class="children" id="tategu2_yokozan"><label><input type="checkbox" class="leaf-cb" data-name="建具2_ヨコ桟" checked> 建具2_ヨコ桟</label></div></details>
                     </div>
                 </details>
-
                 <details>
                     <summary><label><input type="checkbox" class="parent-cb" data-target="tateguwaku" checked> 建具枠</label></summary>
                     <div class="children" id="tateguwaku">
@@ -228,10 +219,40 @@
             "建具2_カガミ板2": "建具2の右上のカガミ板です。"
         };
 
+        function getAssemblyGroupIndex(name) {
+            if (name.includes("カガミ板")) return 0;
+            if (name.includes("ヤトイ実")) return 1;
+            if (name.includes("ヨコ框")) return 2;
+            if (name.includes("タテ框")) return 3;
+            if (name.includes("押板")) return 4;
+            if (name.includes("ヨコ桟")) return 5;
+            if (name.includes("柱")) return 6;
+            if (name.includes("下枠")) return 7;
+            if (name.includes("縦枠")) return 8; 
+            if (name.includes("上枠")) return 9;
+            return 9; 
+        }
+
         let scene, camera, renderer, controls, loadedModel;
-        
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+
+        const activeClipPlane = new THREE.Plane( new THREE.Vector3( 0, 0, -1 ), 0 ); 
+        const planes = [ activeClipPlane ];
+        
+        const capGeometry = new THREE.PlaneGeometry( 100, 100 );
+        let renderOrderCounter = 1;
+
+        const assemblyParts = [];
+
+        const BASE_FOV = 45;
+        
+        // ==================================================
+        // 【追加】カメラのオフセット（ズレ）管理変数
+        // ==================================================
+        let targetOffset = 300;
+        let currentOffset = 300;
+        let offsetAnimId = null;
 
         initThreeJS();
         setupUI();
@@ -240,42 +261,78 @@
             renderer.render(scene, camera);
         }
 
-        // -----------------------------------------------------
-        // 【追加】カメラ位置から「屋外/屋内」を判定する関数
-        // -----------------------------------------------------
+        // ==================================================
+        // 【修正】カメラのレスポンシブ ＋ オフセット処理
+        // ==================================================
+        function updateCameraFov() {
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const aspect = width / height;
+
+            camera.aspect = aspect;
+
+            if (aspect < 1.0) {
+                const fovRad = BASE_FOV * THREE.MathUtils.DEG2RAD;
+                const newFovRad = 2 * Math.atan(Math.tan(fovRad / 2) / aspect);
+                let newFov = newFovRad * THREE.MathUtils.RAD2DEG;
+                camera.fov = Math.min(newFov, 90);
+            } else {
+                camera.fov = BASE_FOV;
+            }
+
+            // カメラの視界を「右パネルの幅の半分」だけ左にズラす魔法
+            if (currentOffset > 0) {
+                camera.setViewOffset(width, height, currentOffset / 2, 0, width, height);
+            } else {
+                camera.clearViewOffset(); // 0になれば元のど真ん中に戻す
+            }
+
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            render();
+        }
+
         function updateSideIndicator() {
             if (!controls) return;
             const indicator = document.getElementById('view-side-indicator');
-            
-            // 注視点（controls.target）を基準にしたカメラの相対X座標を計算
             const relativeX = camera.position.x - controls.target.x;
-            
-            // Xがマイナスなら屋外側、プラスなら屋内側と判定
             if (relativeX < 0) {
                 indicator.innerHTML = "👀 視点：<b>屋外側</b>";
-                indicator.classList.remove('indoor'); // オレンジ色を外す
+                indicator.classList.remove('indoor');
             } else {
                 indicator.innerHTML = "👀 視点：<b>屋内側</b>";
-                indicator.classList.add('indoor'); // オレンジ色をつける
+                indicator.classList.add('indoor');
             }
         }
 
         function initThreeJS() {
             const container = document.getElementById('canvas-container');
             const tooltip = document.getElementById('tooltip');
+            
+            const ySlider = document.getElementById('y-slider');
+            const zSlider = document.getElementById('z-slider');
+            const assemblySlider = document.getElementById('assembly-slider');
+            
+            const uiPanel = document.getElementById('ui-panel');
+            const uiToggleBtn = document.getElementById('ui-toggle-btn');
+            const cutSliderContainer = document.getElementById('cut-slider-container');
+            const instruction = document.getElementById('instruction');
 
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera = new THREE.PerspectiveCamera(BASE_FOV, container.clientWidth / container.clientHeight, 0.1, 100);
             camera.position.set(-4, 1.5, 0); 
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true });
+            renderer.localClippingEnabled = true;
             renderer.setSize(container.clientWidth, container.clientHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             container.appendChild(renderer.domElement);
 
+            // 初回計算
+            updateCameraFov();
+
             controls = new OrbitControls(camera, renderer.domElement);
-            
-            // カメラの動きがあった時に、描画とインジケーターの更新を行う
             controls.addEventListener('change', () => {
                 updateSideIndicator();
                 render();
@@ -291,29 +348,245 @@
             loader.load('asset/wood_door.glb', (gltf) => {
                 loadedModel = gltf.scene;
                 
-                const box = new THREE.Box3().setFromObject(loadedModel);
-                const center = box.getCenter(new THREE.Vector3());
+                const initialBox = new THREE.Box3().setFromObject(loadedModel);
+                const center = initialBox.getCenter(new THREE.Vector3());
                 loadedModel.position.x += (loadedModel.position.x - center.x);
                 loadedModel.position.y += (loadedModel.position.y - center.y);
                 loadedModel.position.z += (loadedModel.position.z - center.z);
 
-                const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+                const finalPosition = loadedModel.position.clone();
+                const finalQuaternion = loadedModel.quaternion.clone();
+
+                loadedModel.rotation.z -= Math.PI / 2; 
+                loadedModel.position.x += 4; 
+                loadedModel.updateMatrixWorld(true);
+                
+                const flatBox = new THREE.Box3().setFromObject(loadedModel);
+                loadedModel.position.y += (0 - flatBox.min.y); 
+                loadedModel.updateMatrixWorld(true);
+
                 loadedModel.traverse((child) => {
-                    if (child.isMesh) {
+                    if (child.isMesh && !child.isLineSegments && !child.userData.isStencil && !child.userData.isCap) {
+                        child.userData.startWorldPos = new THREE.Vector3();
+                        child.getWorldPosition(child.userData.startWorldPos);
+                        child.userData.startWorldQuat = new THREE.Quaternion();
+                        child.getWorldQuaternion(child.userData.startWorldQuat);
+                        
+                        child.userData.groupIndex = getAssemblyGroupIndex(child.name);
+                        assemblyParts.push(child);
+
                         if (child.material) {
-                            child.material.side = THREE.DoubleSide;
+                            child.material.transparent = true;
+                            child.material.opacity = 1.0; 
                         }
+                    }
+                });
+
+                loadedModel.position.copy(finalPosition);
+                loadedModel.quaternion.copy(finalQuaternion);
+                loadedModel.updateMatrixWorld(true);
+
+                assemblyParts.forEach((child) => {
+                    child.userData.origLocalPos = child.position.clone();
+                    child.userData.origLocalQuat = child.quaternion.clone();
+
+                    child.userData.startLocalPos = child.parent.worldToLocal(child.userData.startWorldPos.clone());
+                    
+                    const parentWorldQuat = new THREE.Quaternion();
+                    child.parent.getWorldQuaternion(parentWorldQuat);
+                    child.userData.startLocalQuat = parentWorldQuat.invert().multiply(child.userData.startWorldQuat);
+                });
+                
+                const finalBox = new THREE.Box3().setFromObject(loadedModel);
+                const size = finalBox.getSize(new THREE.Vector3());
+                const bufferY = size.y * 0.05;
+                const bufferZ = size.z * 0.05;
+
+                ySlider.min = finalBox.min.y - bufferY;
+                ySlider.max = finalBox.max.y + bufferY;
+                ySlider.value = ySlider.max;
+
+                zSlider.min = finalBox.min.z - bufferZ;
+                zSlider.max = finalBox.max.z + bufferZ;
+                zSlider.value = zSlider.max;
+                
+                activeClipPlane.normal.set(0, 0, -1);
+                activeClipPlane.constant = parseFloat(zSlider.max);
+
+                ySlider.addEventListener('input', (e) => {
+                    activeClipPlane.normal.set(0, -1, 0); 
+                    activeClipPlane.constant = parseFloat(e.target.value);
+                    zSlider.value = zSlider.max; 
+                    render();
+                });
+                zSlider.addEventListener('input', (e) => {
+                    activeClipPlane.normal.set(0, 0, -1); 
+                    activeClipPlane.constant = parseFloat(e.target.value);
+                    ySlider.value = ySlider.max; 
+                    render();
+                });
+
+                assemblySlider.addEventListener('input', (e) => {
+                    const progress = parseFloat(e.target.value); 
+                    
+                    const numGroups = 10;
+                    const duration = 0.25; 
+                    const step = (1.0 - duration) / (numGroups - 1); 
+
+                    assemblyParts.forEach((child) => {
+                        const g = child.userData.groupIndex;
+                        const start_t = g * step;
+                        
+                        let localProgress = (progress - start_t) / duration;
+                        if (localProgress < 0) localProgress = 0;
+                        if (localProgress > 1) localProgress = 1;
+                        
+                        const easeOut = 1 - Math.pow(1 - localProgress, 3);
+
+                        child.position.lerpVectors(child.userData.startLocalPos, child.userData.origLocalPos, easeOut);
+                        child.quaternion.slerpQuaternions(child.userData.startLocalQuat, child.userData.origLocalQuat, easeOut);
+
+                        const startOpacity = 0.1; 
+                        const midOpacity = 1.0;   
+                        let opacityProgress = Math.min(1.0, easeOut / 0.5); 
+                        
+                        let currentOpacity;
+                        if (progress === 1.0) {
+                            currentOpacity = 1.0; 
+                        } else {
+                            currentOpacity = THREE.MathUtils.lerp(startOpacity, midOpacity, opacityProgress);
+                        }
+
+                        if (child.material) {
+                            child.material.opacity = currentOpacity;
+                        }
+
+                        child.children.forEach(c => {
+                            if (c.isLineSegments && c.material.name === child.name + "_edgeMat") {
+                                c.material.opacity = currentOpacity;
+                            }
+                        });
+                    });
+
+                    if (progress < 1.0) {
+                        renderer.localClippingEnabled = false;
+                        cutSliderContainer.style.opacity = '0.3';
+                        cutSliderContainer.style.pointerEvents = 'none';
+                        uiPanel.style.opacity = '0.5';
+                        uiPanel.style.pointerEvents = 'none';
+                        instruction.style.opacity = '0.3';
+
+                        loadedModel.traverse((child) => {
+                            if (child.userData.stencilGroup) child.userData.stencilGroup.visible = false;
+                            if (child.userData.capMesh) child.userData.capMesh.visible = false;
+                        });
+                    } else {
+                        renderer.localClippingEnabled = true;
+                        cutSliderContainer.style.opacity = '1.0';
+                        cutSliderContainer.style.pointerEvents = 'auto';
+                        uiPanel.style.opacity = '1.0';
+                        uiPanel.style.pointerEvents = 'auto';
+                        instruction.style.opacity = '1.0';
+                        update3DVisibility();
+                    }
+
+                    render();
+                });
+
+                loadedModel.traverse((child) => {
+                    if (child.isMesh && !child.isLineSegments && !child.userData.isStencil) {
+                        
+                        if (child.material) {
+                            child.material.side = THREE.FrontSide;
+                            child.material.clippingPlanes = planes;
+                        }
+
                         const edgesGeometry = new THREE.EdgesGeometry(child.geometry);
-                        const lineSegments = new THREE.LineSegments(edgesGeometry, edgeMaterial);
+                        
+                        const uniqueEdgeMaterial = new THREE.LineBasicMaterial({
+                            color: 0x000000,
+                            clippingPlanes: planes, 
+                            transparent: true,
+                            opacity: 1.0
+                        });
+                        uniqueEdgeMaterial.name = child.name + "_edgeMat";
+
+                        const lineSegments = new THREE.LineSegments(edgesGeometry, uniqueEdgeMaterial);
                         child.add(lineSegments);
+
+                        const id = renderOrderCounter++;
+                        child.renderOrder = 1;
+                        lineSegments.renderOrder = 2;
+
+                        const stencilGroup = new THREE.Group();
+                        stencilGroup.name = child.name + "_stencilGroup";
+                        child.add(stencilGroup);
+
+                        const matBack = new THREE.MeshBasicMaterial({
+                            depthWrite: false, colorWrite: false, stencilWrite: true,
+                            stencilFunc: THREE.AlwaysStencilFunc, side: THREE.BackSide,
+                            stencilFail: THREE.IncrementWrapStencilOp,
+                            stencilZFail: THREE.IncrementWrapStencilOp,
+                            stencilZPass: THREE.IncrementWrapStencilOp,
+                            clippingPlanes: planes
+                        });
+                        const meshBack = new THREE.Mesh(child.geometry, matBack);
+                        meshBack.userData.isStencil = true;
+                        meshBack.renderOrder = id * 10 + 100;
+                        meshBack.frustumCulled = false; 
+                        stencilGroup.add(meshBack);
+
+                        const matFront = new THREE.MeshBasicMaterial({
+                            depthWrite: false, colorWrite: false, stencilWrite: true,
+                            stencilFunc: THREE.AlwaysStencilFunc, side: THREE.FrontSide,
+                            stencilFail: THREE.DecrementWrapStencilOp,
+                            stencilZFail: THREE.DecrementWrapStencilOp,
+                            stencilZPass: THREE.DecrementWrapStencilOp,
+                            clippingPlanes: planes
+                        });
+                        const meshFront = new THREE.Mesh(child.geometry, matFront); 
+                        meshFront.userData.isStencil = true;
+                        meshFront.renderOrder = id * 10 + 101;
+                        meshFront.frustumCulled = false;
+                        stencilGroup.add(meshFront);
+
+                        let baseColor = new THREE.Color(0xcccccc);
+                        if (child.material && child.material.color) baseColor = child.material.color.clone();
+                        
+                        const matCap = new THREE.MeshBasicMaterial({
+                            color: baseColor,
+                            stencilWrite: true,
+                            stencilRef: 1,
+                            stencilFunc: THREE.EqualStencilFunc,
+                            stencilFail: THREE.KeepStencilOp,
+                            stencilZFail: THREE.KeepStencilOp,
+                            stencilZPass: THREE.KeepStencilOp,
+                            side: THREE.DoubleSide
+                        });
+                        const meshCap = new THREE.Mesh(capGeometry, matCap);
+                        meshCap.userData.isCap = true;
+                        meshCap.renderOrder = id * 10 + 102;
+                        meshCap.frustumCulled = false;
+                        
+                        meshCap.onBeforeRender = function() {
+                            this.position.copy(activeClipPlane.normal).multiplyScalar( - activeClipPlane.constant );
+                            this.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), activeClipPlane.normal);
+                            this.updateMatrixWorld();
+                        };
+                        meshCap.onAfterRender = function(renderer) {
+                            renderer.clearStencil();
+                        };
+                        
+                        child.userData.stencilGroup = stencilGroup;
+                        child.userData.capMesh = meshCap;
+                        
+                        scene.add(meshCap);
                     }
                 });
 
                 scene.add(loadedModel);
-                
-                // 初回読み込み完了時の処理
                 update3DVisibility(); 
-                updateSideIndicator(); // インジケーターの初期表示をセット
+                updateSideIndicator();
             });
 
             container.addEventListener('mousemove', (event) => {
@@ -330,7 +603,9 @@
                     const validIntersect = intersects.find(intersect => 
                         intersect.object.isMesh && 
                         !intersect.object.isLineSegments && 
-                        intersect.object.visible
+                        intersect.object.visible &&
+                        !intersect.object.userData.isStencil &&
+                        !intersect.object.userData.isCap
                     );
 
                     if (validIntersect) {
@@ -344,27 +619,26 @@
                 }
             });
 
-            container.addEventListener('mouseleave', () => {
-                tooltip.style.display = 'none'; 
-            });
+            container.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 
             container.addEventListener('contextmenu', (event) => {
                 event.preventDefault(); 
+                
+                if (document.getElementById('assembly-slider').value < 1.0) return; 
 
                 if (loadedModel) {
                     raycaster.setFromCamera(mouse, camera);
-                    
                     const intersects = raycaster.intersectObject(loadedModel, true);
                     const validIntersect = intersects.find(intersect => 
                         intersect.object.isMesh && 
                         !intersect.object.isLineSegments && 
-                        intersect.object.visible
+                        intersect.object.visible &&
+                        !intersect.object.userData.isStencil &&
+                        !intersect.object.userData.isCap
                     );
-
                     if (validIntersect) {
                         const objName = validIntersect.object.name;
                         const targetCheckbox = document.querySelector(`.leaf-cb[data-name="${objName}"]`);
-                        
                         if (targetCheckbox && targetCheckbox.checked) {
                             targetCheckbox.checked = false;
                             updateParentIndeterminateStates();
@@ -375,30 +649,69 @@
                 }
             });
 
-            window.addEventListener('resize', () => {
-                camera.aspect = container.clientWidth / container.clientHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(container.clientWidth, container.clientHeight);
-                render(); 
-            });
+            window.addEventListener('resize', updateCameraFov);
         }
 
+        // ==================================================
+        // 【追加】パネル開閉とカメラ連動アニメーション
+        // ==================================================
         function setupUI() {
             const parentCbs = document.querySelectorAll('.parent-cb');
             const leafCbs = document.querySelectorAll('.leaf-cb');
+            
+            const uiPanel = document.getElementById('ui-panel');
+            const uiToggleBtn = document.getElementById('ui-toggle-btn');
+            const uiCloseBtn = document.getElementById('ui-close-btn');
+
+            // パネルの開閉処理（カメラのオフセットアニメーション付き）
+            function togglePanel(isOpen) {
+                if (isOpen) {
+                    uiPanel.classList.remove('closed');
+                    uiToggleBtn.style.opacity = '0';
+                    uiToggleBtn.style.pointerEvents = 'none';
+                    targetOffset = 300;
+                } else {
+                    uiPanel.classList.add('closed');
+                    uiToggleBtn.style.opacity = '1';
+                    uiToggleBtn.style.pointerEvents = 'auto';
+                    targetOffset = 0;
+                }
+
+                if (offsetAnimId) cancelAnimationFrame(offsetAnimId);
+                
+                function animate() {
+                    currentOffset += (targetOffset - currentOffset) * 0.15; // 0.15はアニメーションの滑らかさ
+                    if (Math.abs(targetOffset - currentOffset) > 0.5) {
+                        updateCameraFov();
+                        offsetAnimId = requestAnimationFrame(animate);
+                    } else {
+                        currentOffset = targetOffset;
+                        updateCameraFov();
+                    }
+                }
+                animate();
+            }
+
+            uiToggleBtn.addEventListener('click', () => togglePanel(true));
+            uiCloseBtn.addEventListener('click', () => togglePanel(false));
+
+            // スマホなど画面が極端に狭い場合は、初期状態を「閉じた状態」にしてモデルを見やすくする
+            if (window.innerWidth <= 768) {
+                uiPanel.classList.add('closed');
+                uiToggleBtn.style.opacity = '1';
+                uiToggleBtn.style.pointerEvents = 'auto';
+                targetOffset = 0;
+                currentOffset = 0;
+            }
 
             parentCbs.forEach(parentCb => {
                 parentCb.addEventListener('change', (e) => {
                     const isChecked = e.target.checked;
                     const targetId = e.target.getAttribute('data-target');
                     const childrenContainer = document.getElementById(targetId);
-                    
                     if (childrenContainer) {
                         const childCbs = childrenContainer.querySelectorAll('input[type="checkbox"]');
-                        childCbs.forEach(cb => {
-                            cb.checked = isChecked;
-                            cb.indeterminate = false;
-                        });
+                        childCbs.forEach(cb => { cb.checked = isChecked; cb.indeterminate = false; });
                     }
                     updateParentIndeterminateStates();
                     update3DVisibility();
@@ -422,14 +735,11 @@
                     const leaves = Array.from(childrenContainer.querySelectorAll('.leaf-cb'));
                     const checkedCount = leaves.filter(leaf => leaf.checked).length;
                     if (checkedCount === 0) {
-                        parent.checked = false;
-                        parent.indeterminate = false;
+                        parent.checked = false; parent.indeterminate = false;
                     } else if (checkedCount === leaves.length) {
-                        parent.checked = true;
-                        parent.indeterminate = false;
+                        parent.checked = true; parent.indeterminate = false;
                     } else {
-                        parent.checked = false;
-                        parent.indeterminate = true;
+                        parent.checked = false; parent.indeterminate = true;
                     }
                 }
             });
@@ -442,14 +752,21 @@
                 const name = cb.getAttribute('data-name');
                 if (name) leafStates[name] = cb.checked;
             });
+            
             loadedModel.traverse((child) => {
-                if (child.isMesh) {
+                if (child.isMesh && !child.isLineSegments && !child.userData.isStencil) {
                     if (leafStates[child.name] !== undefined) {
-                        child.visible = leafStates[child.name];
+                        const isVis = leafStates[child.name];
+                        child.visible = isVis;
+                        if (child.userData.stencilGroup) child.userData.stencilGroup.visible = isVis;
+                        if (child.userData.capMesh) child.userData.capMesh.visible = isVis;
+
+                        if (isVis && child.material && document.getElementById('assembly-slider').value === '1') {
+                            child.material.opacity = 1.0;
+                        }
                     }
                 }
             });
-            
             render(); 
         }
     </script>
